@@ -3,8 +3,6 @@ import uuid
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
-from server.utils.auth_middleware import get_db
 from src import config as conf
 from src.models import select_model
 from src.services.chat_stream_service import llm_chat_stream
@@ -79,7 +77,6 @@ async def chat_llm(
     config: dict = Body({}),
     meta: dict = Body({}),
     image_content: str | None = Body(None),
-    db: AsyncSession = Depends(get_db),
 ):
     """使用特定智能体进行对话（需要登录）"""
     logger.info(f"image_content present: {image_content is not None}")
@@ -109,7 +106,7 @@ async def chat_llm(
 
     # response = await model.call(query, stream=True)
     return StreamingResponse(
-        llm_chat_stream(model, query, meta, config=config, db=db),
+        llm_chat_stream(model, query, meta),
         media_type="application/json",
     )
 

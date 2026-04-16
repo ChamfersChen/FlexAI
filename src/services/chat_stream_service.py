@@ -273,7 +273,7 @@ async def check_and_handle_interrupts(
         logger.error(f"Error checking interrupts: {e}")
         logger.error(traceback.format_exc())
 
-async def llm_chat_stream(model, query, meta, config, db):
+async def llm_chat_stream(model, query, meta):
     def make_chunk(content=None, **kwargs):
         return (
             json.dumps(

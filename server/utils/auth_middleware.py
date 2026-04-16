@@ -1,12 +1,6 @@
 import re
 
-from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.storage.postgres.manager import pg_manager
-from server.utils.auth_utils import AuthUtils
 
 # 定义OAuth2密码承载器，指定token URL
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token", auto_error=False)
@@ -20,12 +14,6 @@ PUBLIC_PATHS = [
     r"^/api/system/health$",  # Health Check
     r"^/api/system/info$",  # 获取系统信息配置
 ]
-
-
-# 获取数据库会话（异步版本）
-async def get_db():
-    async with pg_manager.get_async_session_context() as db:
-        yield db
 
 
 
