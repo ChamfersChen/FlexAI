@@ -1,0 +1,152 @@
+version: '3.8'
+
+x-api-common-env: &api-common-env
+  PYTHONPATH: /app
+  RUNNING_IN_DOCKER: "true"
+  POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-prompta}
+  REDIS_URL: redis://redis:6379/0
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+  MINIO_SECURE: "false"
+  NO_PROXY: localhost,127.0.0.1,minio,redis,postgres
+  no_proxy: localhost,127.0.0.1,minio,redis,postgres
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    image: pria-api:latest
+    container_name: pria-api
+    working_dir: /app
+    volumes:
+      - ./src:/app/src
+      - ./server:/app/server
+      - ./saves:/app/saves
+      - ./.env:/app/.env
+    ports:
+      - "5050:5050"
+    networks:
+      - pria-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      <<: *api-common-env
+    command: python -m uvicorn server.main:app --host 0.0.0.0 --port 5050
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: development
+    image: pria-web:latest
+    container_name: pria-web
+    volumes:
+      - ./web/src:/app/src
+      - ./web/public:/app/public
+      - ./web/vite.config.js:/app/vite.config.js
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    networks:
+      - pria-network
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:5050
+    command: pnpm run dev
+    restart: unless-stopped
+
+  # Production web server (optional)
+  web-prod:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: production
+    image: pria-web-prod:latest
+    container_name: pria-web-prod
+    ports:
+      - "80:80"
+    networks:
+      - pria-network
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    container_name: pria-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-prompta}
+      - TZ=${TZ:-Asia/Shanghai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-prompta} || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - pria-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: pria-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - pria-network
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    container_name: pria-minio
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio_data:/minio_data
+    command: server /minio_data --address ":9000" --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - pria-network
+    restart: unless-stopped
+
+networks:
+  pria-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
